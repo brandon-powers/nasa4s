@@ -1,0 +1,4 @@
+-Dhttp.proxyHost=
+-Dhttps.proxyHost=
+-Djava.net.useSystemProxies=false
+-Dcoursier.cache=/tmp/coursier-cache
