@@ -2,7 +2,8 @@ package nasa4s.apod
 
 import cats.effect.Sync
 import fs2.Stream
-import io.circe.generic.JsonCodec
+import io.circe.{Decoder, Encoder}
+import io.circe.generic.semiauto.{deriveDecoder, deriveEncoder}
 import org.http4s.circe._
 import org.http4s.client.Client
 import org.http4s.{EntityDecoder, Method, Request, Uri}
@@ -27,19 +28,28 @@ trait Apod[F[_]] {
 }
 
 object Apod {
-  val url = "https://api.nasa.gov/planetary/apod"
+  private val baseUri = Uri.uri("https://api.nasa.gov/planetary/apod")
 
-  /** @todo Fix snake case naming and JSON parsing. */
-  @JsonCodec
-  case class Response(copyright: Option[String],
-                      date: String,
-                      explanation: String,
-                      hdurl: Option[String],
-                      media_type: String,
-                      service_version: String,
-                      title: String,
-                      url: String)
+  /** APOD API response with idiomatic Scala camelCase field names.
+   * JSON snake_case fields are automatically mapped via custom codecs. */
+  case class Response(
+    copyright: Option[String],
+    date: String,
+    explanation: String,
+    hdUrl: Option[String],
+    mediaType: String,
+    serviceVersion: String,
+    title: String,
+    url: String
+  )
 
+  object Response {
+    implicit val decoder: Decoder[Response] = Decoder.forProduct8(
+      "copyright", "date", "explanation", "hdurl", "media_type", "service_version", "title", "url"
+    )(Response.apply)
+
+    implicit val encoder: Encoder[Response] = deriveEncoder[Response]
+  }
 
   def apply[F[_] : Sync](client: Client[F], apiKey: ApiKey): Apod[F] = new ApodImpl[F](client, apiKey)
 
@@ -47,7 +57,10 @@ object Apod {
     implicit val responseEntityDecoder: EntityDecoder[F, Response] = jsonOf[F, Response]
 
     override def call(date: String, hd: Boolean): F[Response] = {
-      val uri = Uri.unsafeFromString(s"${Apod.url}?date=$date&hd=$hd&api_key=${apiKey.value}")
+      val uri = baseUri
+        .withQueryParam("date", date)
+        .withQueryParam("hd", hd)
+        .withQueryParam("api_key", apiKey.value)
       val request = Request[F](Method.GET, uri)
 
       client.expect[Response](request)
@@ -56,11 +69,10 @@ object Apod {
     override def download(date: String, hd: Boolean): Stream[F, Byte] = {
       Stream
         .eval(call(date, hd))
-        .filter(_.media_type == "image")
+        .filter(_.mediaType == "image")
         .flatMap { response: Response =>
-          // Safe `get` due to the `isDefined` check.
-          val uri = if (hd && response.hdurl.isDefined) response.hdurl.get else response.url
-          val request = Request[F](Method.GET, Uri.unsafeFromString(uri))
+          val imageUrl = response.hdUrl.filter(_ => hd).getOrElse(response.url)
+          val request = Request[F](Method.GET, Uri.unsafeFromString(imageUrl))
 
           client.stream(request).flatMap(_.body)
         }

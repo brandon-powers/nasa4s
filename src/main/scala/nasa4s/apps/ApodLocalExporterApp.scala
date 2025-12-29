@@ -1,9 +1,8 @@
 package nasa4s.apps
 
 import java.io.{BufferedOutputStream, FileOutputStream, OutputStream}
-import java.util.concurrent.Executors
 
-import cats.effect.{Blocker, ConcurrentEffect, ContextShift, ExitCode, IO, IOApp}
+import cats.effect.{Blocker, ConcurrentEffect, ContextShift, ExitCode, IO, IOApp, Resource}
 import cats.implicits._
 import nasa4s.apod.{ApiKey, Apod}
 import org.http4s.client.blaze.BlazeClientBuilder
@@ -22,40 +21,39 @@ class ApodLocalExporter[F[_]](apod: Apod[F], maxConcurrentDownloads: Int, maxCon
 ) extends ApodExporter[F] {
   override def export(dates: List[String]): F[Unit] = {
     ApodExporter
-      .parDownloadApodsWithIndex[F](apod, dates, maxConcurrentDownloads)
-      .parEvalMapUnordered(maxConcurrentExports) { case (apodData: Vector[Byte], index) =>
+      .parDownloadApodsWithDate[F](apod, dates, maxConcurrentDownloads)
+      .parEvalMapUnordered(maxConcurrentExports) { case (apodData: Vector[Byte], date) =>
+        val filename = s"apod-$date.jpg"
         val createOutputStream: F[OutputStream] = F.delay {
-          new BufferedOutputStream(
-            // TODO: Make these names meaningful. Either the name from NASA metadata or
-            //  the date would be an improvement, though this relaxed approach allows
-            //  more finely-tuned concurrency control.
-            new FileOutputStream(s"apod-export-$index.jpg"))
+          new BufferedOutputStream(new FileOutputStream(filename))
         }
 
-        fs2.Stream
-          .emits(apodData)
-          .covary[F]
-          .through {
-            fs2.io.writeOutputStream[F](createOutputStream, blocker)
-          }
-          .compile
-          .drain
+        F.delay(println(s"Exporting $filename...")) *>
+          fs2.Stream
+            .emits(apodData)
+            .covary[F]
+            .through {
+              fs2.io.writeOutputStream[F](createOutputStream, blocker)
+            }
+            .compile
+            .drain
       }.compile.drain
   }
-
-
 }
 
 object ApodLocalExporterApp extends IOApp {
 
   override def run(args: List[String]): IO[ExitCode] = {
-    val builder = BlazeClientBuilder[IO](scala.concurrent.ExecutionContext.global)
-    val blocker = Blocker.liftExecutionContext(ExecutionContext.fromExecutor(Executors.newCachedThreadPool()))
+    val builder = BlazeClientBuilder[IO](ExecutionContext.global)
     val apiKey = ApiKey("<omitted>")
 
-    builder
-      .resource
-      .use { client =>
+    val resources: Resource[IO, (org.http4s.client.Client[IO], Blocker)] = for {
+      client <- builder.resource
+      blocker <- Blocker[IO]
+    } yield (client, blocker)
+
+    resources
+      .use { case (client, blocker) =>
         val apod = Apod[IO](client, apiKey)
         val exporter = new ApodLocalExporter[IO](apod, maxConcurrentDownloads = 3, maxConcurrentExports = 3, blocker)
 
