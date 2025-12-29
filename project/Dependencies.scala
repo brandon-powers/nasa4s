@@ -20,7 +20,7 @@ object Dependencies {
     "io.circe" %% "circe-generic" % "0.12.3",
     "io.circe" %% "circe-parser" % "0.12.3",
     "org.http4s" %% "http4s-circe" % Version.http4s,
-    "io.circe" %% "circe-generic-extras" % "0.8.0",
+    "io.circe" %% "circe-generic-extras" % "0.12.3",
     "org.scalatest" %% "scalatest" % "3.0.8" % "test",
     "com.lendup.fs2-blobstore" %% "core" % "0.6.+",
     "com.lendup.fs2-blobstore" %% "sftp" % "0.6.+",

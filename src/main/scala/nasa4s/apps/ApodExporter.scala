@@ -9,17 +9,22 @@ trait ApodExporter[F[_]] {
 }
 
 object ApodExporter {
-  def parDownloadApodsWithIndex[F[_]](
+  /** Downloads APODs in parallel, returning bytes paired with their original date.
+   *
+   * @param apod                   the APOD client
+   * @param dates                  list of dates to download
+   * @param maxConcurrentDownloads maximum concurrent downloads
+   * @return stream of (bytes, date) pairs */
+  def parDownloadApodsWithDate[F[_]](
     apod: Apod[F],
     dates: List[String],
     maxConcurrentDownloads: Int
-  )(implicit F: ConcurrentEffect[F]): fs2.Stream[F, (Vector[Byte], Long)] =
+  )(implicit F: ConcurrentEffect[F]): fs2.Stream[F, (Vector[Byte], String)] =
     fs2.Stream
       .emits(dates)
-      .evalTap(date => F.delay(println(s"Downloading and exporting $date APOD...")))
+      .evalTap(date => F.delay(println(s"Downloading APOD for $date...")))
       .covary[F]
       .parEvalMapUnordered(maxConcurrentDownloads) { date =>
-        apod.download(date).compile.toVector
+        apod.download(date).compile.toVector.map(bytes => (bytes, date))
       }
-      .zipWithIndex
 }
