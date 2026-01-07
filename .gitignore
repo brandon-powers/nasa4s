@@ -1,3 +1,6 @@
 local*
 target*
 .idea*
+apod-export-*.jpg
+.gradle/
+build/

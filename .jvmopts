@@ -1,0 +1,6 @@
+-Dhttp.proxyHost=
+-Dhttps.proxyHost=
+-Djava.net.useSystemProxies=false
+-Dcoursier.httpclient.use-system-properties=false
+-Xms512m
+-Xmx2g
